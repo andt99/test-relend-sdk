@@ -173,6 +173,7 @@ export class RelendAction {
     const seed = lendingMarket.address.slice(0, 32);
 
     const programId = getProgramId(environment);
+    console.log("programId", programId);
 
     const obligationAddress = await PublicKey.createWithSeed(
       publicKey,
