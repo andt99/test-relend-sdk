@@ -1,6 +1,6 @@
 {
   "name": "test-relend-sdk",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "main": "src/index.ts",
   "module": "src/index.ts",
@@ -20,6 +20,8 @@
     "release": "yarn build; ts-node ./prepublish.ts; yarn --cwd ./dist publish"
   },
   "dependencies": {
+    "@coral-xyz/anchor": "^0.28.1-beta.2",
+    "@coral-xyz/borsh": "^0.28.0",
     "@marinade.finance/marinade-ts-sdk": "^3.1.1",
     "@mithraic-labs/psy-american": "^0.2.1",
     "@project-serum/anchor": "^0.24.2",

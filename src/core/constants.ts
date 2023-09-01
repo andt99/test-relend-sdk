@@ -14,7 +14,7 @@ export const RELEND_INFO = [
     isPrimary: true,
     description: "",
     creator: "F72qg2teDKus7FGsFvpoWEYoVnC6LgKbBzPGCEE31rjj",
-    address: "4UpD2fh7xH3VP9QQaXtsS1YY3bxzWhtfpks7FatyKvdY",
+    address: "C2UDScHU1ex5hDUok5hT1G7TQgK7Qgrb5J66U5sTpr22",
     hidden: false,
     isPermissionless: false,
     authorityAddress: "4iXmFbrBu32eStadyNmJeKndyWZFXdbrjyiwPLmgo7Fq",
