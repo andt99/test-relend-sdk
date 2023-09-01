@@ -1,91 +1,104 @@
-import { Connection, PublicKey } from "@solana/web3.js"
-import axios from "axios"
-import { RelendClaim } from "./claim"
-import * as anchor from "@project-serum/anchor"
 import {
-  getAssociatedTokenAddress,
-  TOKEN_PROGRAM_ID,
+  OptionMarketWithKey,
+  PsyAmericanIdl,
+  getOptionByKey,
+} from "@mithraic-labs/psy-american";
+import * as anchor from "@project-serum/anchor";
+import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddress,
   unpackAccount,
-} from "@solana/spl-token"
-import { PsyAmericanIdl, getOptionByKey, OptionMarketWithKey } from "@mithraic-labs/psy-american"
-import { MERKLE_PROGRAM_ID, MerkleDistributorJSON } from "../utils/merkle_distributor"
-import { ExternalRewardStatType, ConfigType } from "./shared"
-import { estimateCurrentScore } from "./utils"
-import { getProgramId } from "./constants"
+} from "@solana/spl-token";
+import { Connection, PublicKey } from "@solana/web3.js";
+import axios from "axios";
+import { RELEND_INFO } from "../core";
+import {
+  MERKLE_PROGRAM_ID,
+  MerkleDistributorJSON,
+} from "../utils/merkle_distributor";
+import { RelendClaim } from "./claim";
+import { getProgramId } from "./constants";
+import { ConfigType, ExternalRewardStatType } from "./shared";
+import { estimateCurrentScore } from "./utils";
 
-const API_ENDPOINT = "https://api.solend.fi"
+// const API_ENDPOINT = "https://api.solend.fi"
+const API_ENDPOINT = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 export type ClaimType = {
-  obligationID: string
-  lotNumber: number
-  index: number
-  quantity: string
-  root: string
-  proof: Array<string>
-  distributorPublicKey: string
-  name: string
-  incentivizer: string
-  optionMarketKey: string
-}
+  obligationID: string;
+  lotNumber: number;
+  index: number;
+  quantity: string;
+  root: string;
+  proof: Array<string>;
+  distributorPublicKey: string;
+  name: string;
+  incentivizer: string;
+  optionMarketKey: string;
+};
 
 export type EnrichedClaimType = {
-  claimable: boolean
-  claimedAt: number | null
-  mintAddress: string
-  quantity: string
+  claimable: boolean;
+  claimedAt: number | null;
+  mintAddress: string;
+  quantity: string;
   distributor: {
-    mint: PublicKey
-    bump: number
-  }
-  distributorATAPublicKey: PublicKey
-  claimId: PublicKey
-  claimStatusBump: number
+    mint: PublicKey;
+    bump: number;
+  };
+  distributorATAPublicKey: PublicKey;
+  claimId: PublicKey;
+  claimStatusBump: number;
   optionMarket:
     | (OptionMarketWithKey & {
-        userBalance: number
+        userBalance: number;
       })
-    | null
-} & ClaimType
+    | null;
+} & ClaimType;
 
 type RewardScoreType = {
-  obligationId: string
-  balance: string
-  debt: string
-  score: string
-  lastSlot: number
-  tokenMint: string
-  side: "supply" | "borrow"
-}
+  obligationId: string;
+  balance: string;
+  debt: string;
+  score: string;
+  lastSlot: number;
+  tokenMint: string;
+  side: "supply" | "borrow";
+};
 
 type ExternalRewardScoreType = RewardScoreType & {
-  reserveID: string
-  rewardMint: string
-  rewardSymbol: string
-}
+  reserveID: string;
+  rewardMint: string;
+  rewardSymbol: string;
+};
 
 export type RelendReward = {
-  lifetimeAmount: number
-  symbol: string
-  claimedAmount: number
-  claimableAmount: number
-  rewardClaims: Array<RelendClaim>
-}
+  lifetimeAmount: number;
+  symbol: string;
+  claimedAmount: number;
+  claimableAmount: number;
+  rewardClaims: Array<RelendClaim>;
+};
 
 export class RelendWallet {
-  config: ConfigType | null
+  config: ConfigType | null;
 
-  rewards: { [key: string]: RelendReward }
+  rewards: { [key: string]: RelendReward };
 
-  provider: anchor.AnchorProvider
+  provider: anchor.AnchorProvider;
 
-  programId: PublicKey
+  programId: PublicKey;
 
-  private constructor(wallet: anchor.Wallet, connection: Connection, environment: string) {
-    this.config = null
-    this.rewards = {}
-    this.provider = new anchor.AnchorProvider(connection, wallet, {})
-    this.programId = getProgramId(environment)
+  private constructor(
+    wallet: anchor.Wallet,
+    connection: Connection,
+    environment: string
+  ) {
+    this.config = null;
+    this.rewards = {};
+    this.provider = new anchor.AnchorProvider(connection, wallet, {});
+    this.programId = getProgramId(environment);
   }
 
   static async initialize(
@@ -93,78 +106,103 @@ export class RelendWallet {
     connection: Connection,
     environment: "production" | "devnet" = "production"
   ) {
-    const loadedWallet = new RelendWallet(wallet, connection, environment)
-    const config = (await (
-      await axios.get(`${API_ENDPOINT}/v1/markets/configs?scope=all&deployment=${environment}`)
-    ).data) as ConfigType
-    loadedWallet.config = config
+    const loadedWallet = new RelendWallet(wallet, connection, environment);
+    // const config = (await (
+    //   await axios.get(
+    //     `${API_ENDPOINT}/v1/markets/configs?scope=all&deployment=${environment}`
+    //   )
+    // ).data) as ConfigType;
+    const config = RELEND_INFO as ConfigType;
+    loadedWallet.config = config;
 
-    await loadedWallet.loadRewards()
+    await loadedWallet.loadRewards();
 
-    return loadedWallet
+    return loadedWallet;
   }
 
   async loadRewards() {
     if (!this.config) {
-      throw Error("Wallet must be initialized to call loadRewards.")
+      throw Error("Wallet must be initialized to call loadRewards.");
     }
-    const anchorProgram = new anchor.Program(MerkleDistributorJSON, new PublicKey(MERKLE_PROGRAM_ID), this.provider)
+    const anchorProgram = new anchor.Program(
+      MerkleDistributorJSON,
+      new PublicKey(MERKLE_PROGRAM_ID),
+      this.provider
+    );
 
     const psyOptionsProgram = new anchor.Program(
       PsyAmericanIdl,
       new PublicKey("R2y9ip6mxmWUj4pt54jP2hz2dgvMozy9VTSwMWE7evs"),
       this.provider
-    ) as any
+    ) as any;
 
     const externalStatResponse = (
-      await axios.get(`${API_ENDPOINT}/liquidity-mining/external-reward-stats-v2?flat=true`)
-    ).data as Promise<Array<ExternalRewardStatType>>
+      await axios.get(
+        `${API_ENDPOINT}/liquidity-mining/external-reward-stats-v2?flat=true`
+      )
+    ).data as Promise<Array<ExternalRewardStatType>>;
 
     const externalScoreResponse = (
       await axios.get(
         `${API_ENDPOINT}/liquidity-mining/external-reward-score-v2?wallet=${this.provider.wallet.publicKey.toBase58()}`
       )
-    ).data as Promise<Array<ExternalRewardScoreType>>
+    ).data as Promise<Array<ExternalRewardScoreType>>;
 
-    const primaryMarketSeed = this.config.find((market) => market.isPrimary)!.address.slice(0, 32)
+    const primaryMarketSeed = this.config
+      .find((market) => market.isPrimary)!
+      .address.slice(0, 32);
 
     const obligationAddress = await PublicKey.createWithSeed(
       this.provider.wallet.publicKey,
       primaryMarketSeed,
       new PublicKey(this.programId)
-    )
+    );
 
     const claimResponse = (
-      await axios.get(`${API_ENDPOINT}/liquidity-mining/reward-proofs?obligation=${obligationAddress}`)
-    ).data as Promise<Array<ClaimType>>
+      await axios.get(
+        `${API_ENDPOINT}/liquidity-mining/reward-proofs?obligation=${obligationAddress}`
+      )
+    ).data as Promise<Array<ClaimType>>;
 
     const [externalStatData, externalScoreData, claimData] = await Promise.all([
       externalStatResponse,
       externalScoreResponse,
       claimResponse,
-    ])
+    ]);
 
     const optionMarkets = await Promise.all(
       claimData.map((d) =>
-        d.optionMarketKey ? getOptionByKey(psyOptionsProgram, new PublicKey(d.optionMarketKey)) : Promise.resolve(null)
+        d.optionMarketKey
+          ? getOptionByKey(psyOptionsProgram, new PublicKey(d.optionMarketKey))
+          : Promise.resolve(null)
       )
-    )
+    );
 
     const optionAtas = await Promise.all(
       optionMarkets.map((om) =>
         om
-          ? getAssociatedTokenAddress(new PublicKey(om.optionMint), this.provider.wallet.publicKey, true)
-          : Promise.resolve(new PublicKey("nu11111111111111111111111111111111111111111"))
+          ? getAssociatedTokenAddress(
+              new PublicKey(om.optionMint),
+              this.provider.wallet.publicKey,
+              true
+            )
+          : Promise.resolve(
+              new PublicKey("nu11111111111111111111111111111111111111111")
+            )
       )
-    )
+    );
 
-    const optionBalances = await this.provider.connection.getMultipleAccountsInfo(optionAtas)
+    const optionBalances =
+      await this.provider.connection.getMultipleAccountsInfo(optionAtas);
 
-    const parsedOptionBalances = optionBalances.map((om, index) => (om ? unpackAccount(optionAtas[index], om) : null))
+    const parsedOptionBalances = optionBalances.map((om, index) =>
+      om ? unpackAccount(optionAtas[index], om) : null
+    );
 
-    const merkleDistributors = (await anchorProgram.account.merkleDistributor.fetchMultiple(
-      claimData.map((d) => d.distributorPublicKey)
-    )) as Array<any>
+    const merkleDistributors =
+      (await anchorProgram.account.merkleDistributor.fetchMultiple(
+        claimData.map((d) => d.distributorPublicKey)
+      )) as Array<any>;
 
     const claimAndBumps = await Promise.all(
       claimData.map(async (d) => {
@@ -175,31 +213,37 @@ export class RelendWallet {
             new PublicKey(d.distributorPublicKey).toBytes(),
           ],
           new PublicKey(MERKLE_PROGRAM_ID)
-        )
+        );
 
-        return claimAndBump
+        return claimAndBump;
       })
-    )
+    );
 
-    const claimStatuses = (await anchorProgram.account.claimStatus.fetchMultiple(
-      claimAndBumps.map((candb) => candb[0])
-    )) as Array<any>
+    const claimStatuses =
+      (await anchorProgram.account.claimStatus.fetchMultiple(
+        claimAndBumps.map((candb) => candb[0])
+      )) as Array<any>;
 
     const fullData = await Promise.all(
       claimData.map(async (d, index) => {
-        const [distributorATAPublicKey, _bump] = await PublicKey.findProgramAddress(
-          [
-            new PublicKey(d.distributorPublicKey).toBuffer(),
-            TOKEN_PROGRAM_ID.toBuffer(),
-            merkleDistributors[index].mint.toBuffer(),
-          ],
-          ASSOCIATED_TOKEN_PROGRAM_ID
-        )
+        const [distributorATAPublicKey, _bump] =
+          await PublicKey.findProgramAddress(
+            [
+              new PublicKey(d.distributorPublicKey).toBuffer(),
+              TOKEN_PROGRAM_ID.toBuffer(),
+              merkleDistributors[index].mint.toBuffer(),
+            ],
+            ASSOCIATED_TOKEN_PROGRAM_ID
+          );
 
         const claimable =
-          (await this.provider.connection.getTokenAccountBalance(distributorATAPublicKey)).value.amount !== "0"
+          (
+            await this.provider.connection.getTokenAccountBalance(
+              distributorATAPublicKey
+            )
+          ).value.amount !== "0";
 
-        const om = optionMarkets[index]
+        const om = optionMarkets[index];
 
         return {
           ...d,
@@ -207,7 +251,9 @@ export class RelendWallet {
             ? {
                 ...om,
                 userBalance: Number(parsedOptionBalances[index]?.amount ?? 0),
-                expired: om.expirationUnixTimestamp.toNumber() <= Math.floor(new Date().getTime()) / 1000,
+                expired:
+                  om.expirationUnixTimestamp.toNumber() <=
+                  Math.floor(new Date().getTime()) / 1000,
               }
             : null,
           claimable,
@@ -217,49 +263,60 @@ export class RelendWallet {
           distributorATAPublicKey,
           claimId: claimAndBumps[index][0],
           claimStatusBump: claimAndBumps[index][1],
-        }
+        };
       })
-    )
+    );
 
-    const mostRecentSlot = await this.provider.connection.getSlot("finalized")
-    const mostRecentSlotTime = (await this.provider.connection.getBlockTime(mostRecentSlot)) as number
+    const mostRecentSlot = await this.provider.connection.getSlot("finalized");
+    const mostRecentSlotTime = (await this.provider.connection.getBlockTime(
+      mostRecentSlot
+    )) as number;
 
     const rewards = fullData.reduce((acc, currentValue) => {
       if (!acc[currentValue.distributor.mint]) {
-        acc[currentValue.distributor.mint] = []
+        acc[currentValue.distributor.mint] = [];
       }
-      acc[currentValue.distributor.mint].push(currentValue)
-      return acc
-    }, {} as { [mint: string]: Array<EnrichedClaimType> })
+      acc[currentValue.distributor.mint].push(currentValue);
+      return acc;
+    }, {} as { [mint: string]: Array<EnrichedClaimType> });
 
     const externalEarningsData = externalScoreData.reduce(
       (acc, rewardScore) => {
         const rewardStat = externalStatData.find(
-          (reward) => reward.reserveID === rewardScore.reserveID && reward.side === rewardScore.side
-        )
+          (reward) =>
+            reward.reserveID === rewardScore.reserveID &&
+            reward.side === rewardScore.side
+        );
         const currentScore = rewardStat
-          ? estimateCurrentScore(rewardStat, rewardScore, mostRecentSlot, mostRecentSlotTime).toNumber()
-          : 0
+          ? estimateCurrentScore(
+              rewardStat,
+              rewardScore,
+              mostRecentSlot,
+              mostRecentSlotTime
+            ).toNumber()
+          : 0;
 
         return {
           ...acc,
           [rewardScore.rewardMint]: {
             symbol: rewardScore.rewardSymbol,
-            lifetimeAmount: (acc[rewardScore.rewardMint]?.lifetimeAmount ?? 0) + Number(currentScore),
+            lifetimeAmount:
+              (acc[rewardScore.rewardMint]?.lifetimeAmount ?? 0) +
+              Number(currentScore),
           },
-        }
+        };
       },
       {} as {
         [key: string]: {
-          symbol: string
-          lifetimeAmount: number
-        }
+          symbol: string;
+          lifetimeAmount: number;
+        };
       }
-    )
+    );
 
     const rewardsData = {
       ...externalEarningsData,
-    }
+    };
 
     const rewardMetadata = (
       await (
@@ -270,28 +327,31 @@ export class RelendWallet {
         )
       ).data
     ).results as Array<{
-      coingeckoID: string
-      decimals: number
-      logo: string
-      mint: string
-      name: string
-      symbol: string
-    }>
+      coingeckoID: string;
+      decimals: number;
+      logo: string;
+      mint: string;
+      name: string;
+      symbol: string;
+    }>;
 
     this.rewards = Object.fromEntries(
       Object.entries(rewardsData).map(([rewardMint, earning]) => {
-        const rewardData = rewards[rewardMint]
+        const rewardData = rewards[rewardMint];
         const rewardClaims = fullData
           .filter((lot) => lot.mintAddress.toBase58() === rewardMint)
-          .map((reward) => new RelendClaim(reward, this.provider))
-        const metadata = rewardMetadata.find((rew) => rew?.symbol === earning.symbol)
+          .map((reward) => new RelendClaim(reward, this.provider));
+        const metadata = rewardMetadata.find(
+          (rew) => rew?.symbol === earning.symbol
+        );
 
         return [
           rewardMint,
           {
             ...earning,
             ...metadata,
-            lifetimeAmount: earning.lifetimeAmount / 10 ** (36 - (metadata?.decimals ?? 0)),
+            lifetimeAmount:
+              earning.lifetimeAmount / 10 ** (36 - (metadata?.decimals ?? 0)),
             claimedAmount:
               rewardData
                 ?.filter((reward) => reward.claimedAt)
@@ -302,20 +362,22 @@ export class RelendWallet {
                 .reduce((acc, reward) => acc + Number(reward.quantity), 0) ?? 0,
             rewardClaims: rewardClaims,
           },
-        ]
+        ];
       })
-    )
+    );
   }
 
   async getClaimAllIxs() {
-    const allSetupIxs = []
-    const allClaimIxs = []
-    for (const claim of Object.values(this.rewards).flatMap((reward) => reward.rewardClaims)) {
-      const [setupIxs, claimIxs] = await claim.getClaimIxs()
-      allSetupIxs.push(...setupIxs)
-      allClaimIxs.push(...claimIxs)
+    const allSetupIxs = [];
+    const allClaimIxs = [];
+    for (const claim of Object.values(this.rewards).flatMap(
+      (reward) => reward.rewardClaims
+    )) {
+      const [setupIxs, claimIxs] = await claim.getClaimIxs();
+      allSetupIxs.push(...setupIxs);
+      allClaimIxs.push(...claimIxs);
     }
 
-    return [allSetupIxs, allClaimIxs]
+    return [allSetupIxs, allClaimIxs];
   }
 }

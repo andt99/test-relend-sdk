@@ -1,95 +1,102 @@
 import {
+  NATIVE_MINT,
+  createAssociatedTokenAccountInstruction,
+  createCloseAccountInstruction,
+  getAssociatedTokenAddress,
+  getMinimumBalanceForRentExemptAccount,
+} from "@solana/spl-token";
+import {
   Connection,
   PublicKey,
   SystemProgram,
   Transaction,
   TransactionInstruction,
   TransactionSignature,
-} from "@solana/web3.js"
+} from "@solana/web3.js";
+import axios from "axios";
+import BigNumber from "bignumber.js";
+import BN from "bn.js";
+import { ActionType } from "../core";
+import { POSITION_LIMIT, RELEND_INFO } from "../core/constants";
 import {
-  NATIVE_MINT,
-  getAssociatedTokenAddress,
-  createAssociatedTokenAccountInstruction,
-  getMinimumBalanceForRentExemptAccount,
-  createCloseAccountInstruction,
-} from "@solana/spl-token"
-import BN from "bn.js"
-import BigNumber from "bignumber.js"
-import axios from "axios"
-import { Obligation, OBLIGATION_SIZE, parseObligation } from "../state/obligation"
-import {
+  borrowObligationLiquidityInstruction,
+  depositObligationCollateralInstruction,
   depositReserveLiquidityAndObligationCollateralInstruction,
   depositReserveLiquidityInstruction,
-  redeemReserveCollateralInstruction,
-  repayObligationLiquidityInstruction,
-  withdrawObligationCollateralAndRedeemReserveLiquidity,
-  refreshReserveInstruction,
   initObligationInstruction,
-  borrowObligationLiquidityInstruction,
+  redeemReserveCollateralInstruction,
   refreshObligationInstruction,
+  refreshReserveInstruction,
+  repayObligationLiquidityInstruction,
   syncNative,
-  depositObligationCollateralInstruction,
-} from "../instructions"
-import { U64_MAX, WAD, getProgramId } from "./constants"
-import { parseReserve } from "../state/reserve"
-import { ReserveConfigType, MarketConfigType, ConfigType } from "./shared"
-import { POSITION_LIMIT } from "../core/constants"
-import { ActionType } from "../core"
+  withdrawObligationCollateralAndRedeemReserveLiquidity,
+} from "../instructions";
+import {
+  OBLIGATION_SIZE,
+  Obligation,
+  parseObligation,
+} from "../state/obligation";
+import { parseReserve } from "../state/reserve";
+import { U64_MAX, WAD, getProgramId } from "./constants";
+import { ConfigType, MarketConfigType, ReserveConfigType } from "./shared";
 
-const API_ENDPOINT = "https://api.solend.fi"
+// const API_ENDPOINT = "https://api.solend.fi"
+const API_ENDPOINT = process.env.NEXT_PUBLIC_BACKEND_URL;
 
-const SOL_PADDING_FOR_INTEREST = "1000000"
+const SOL_PADDING_FOR_INTEREST = "1000000";
 
 function getTokenInfo(symbol: string, solendInfo: MarketConfigType) {
-  const tokenInfo = solendInfo.reserves.find((reserve) => reserve.liquidityToken.symbol === symbol)
+  const tokenInfo = solendInfo.reserves.find(
+    (reserve) => reserve.liquidityToken.symbol === symbol
+  );
   if (!tokenInfo) {
-    throw new Error(`Could not find ${symbol} in ASSETS`)
+    throw new Error(`Could not find ${symbol} in ASSETS`);
   }
-  return tokenInfo
+  return tokenInfo;
 }
 
 export class RelendAction {
-  programId: PublicKey
+  programId: PublicKey;
 
-  connection: Connection
+  connection: Connection;
 
-  reserve: ReserveConfigType
+  reserve: ReserveConfigType;
 
-  lendingMarket: MarketConfigType
+  lendingMarket: MarketConfigType;
 
-  publicKey: PublicKey
+  publicKey: PublicKey;
 
-  obligationAddress: PublicKey
+  obligationAddress: PublicKey;
 
-  obligationAccountInfo: Obligation | null
+  obligationAccountInfo: Obligation | null;
 
-  userTokenAccountAddress: PublicKey
+  userTokenAccountAddress: PublicKey;
 
-  userCollateralAccountAddress: PublicKey
+  userCollateralAccountAddress: PublicKey;
 
-  seed: string
+  seed: string;
 
-  symbol: string
+  symbol: string;
 
-  positions?: number
+  positions?: number;
 
-  amount: BN
+  amount: BN;
 
-  hostAta?: PublicKey
+  hostAta?: PublicKey;
 
-  setupIxs: Array<TransactionInstruction>
+  setupIxs: Array<TransactionInstruction>;
 
-  lendingIxs: Array<TransactionInstruction>
+  lendingIxs: Array<TransactionInstruction>;
 
-  cleanupIxs: Array<TransactionInstruction>
+  cleanupIxs: Array<TransactionInstruction>;
 
-  preTxnIxs: Array<TransactionInstruction>
+  preTxnIxs: Array<TransactionInstruction>;
 
-  postTxnIxs: Array<TransactionInstruction>
+  postTxnIxs: Array<TransactionInstruction>;
 
-  depositReserves: Array<PublicKey>
+  depositReserves: Array<PublicKey>;
 
-  borrowReserves: Array<PublicKey>
+  borrowReserves: Array<PublicKey>;
 
   private constructor(
     programId: PublicKey,
@@ -109,27 +116,27 @@ export class RelendAction {
     borrowReserves: Array<PublicKey>,
     hostAta?: PublicKey
   ) {
-    this.programId = programId
-    this.connection = connection
-    this.publicKey = publicKey
-    this.amount = new BN(amount)
-    this.symbol = symbol
-    this.positions = positions
-    this.hostAta = hostAta
-    this.obligationAccountInfo = obligationAccountInfo
-    this.lendingMarket = lendingMarket
-    this.seed = seed
-    this.reserve = reserve
-    this.obligationAddress = obligationAddress
-    this.userTokenAccountAddress = userTokenAccountAddress
-    this.userCollateralAccountAddress = userCollateralAccountAddress
-    this.setupIxs = []
-    this.lendingIxs = []
-    this.cleanupIxs = []
-    this.preTxnIxs = []
-    this.postTxnIxs = []
-    this.depositReserves = depositReserves
-    this.borrowReserves = borrowReserves
+    this.programId = programId;
+    this.connection = connection;
+    this.publicKey = publicKey;
+    this.amount = new BN(amount);
+    this.symbol = symbol;
+    this.positions = positions;
+    this.hostAta = hostAta;
+    this.obligationAccountInfo = obligationAccountInfo;
+    this.lendingMarket = lendingMarket;
+    this.seed = seed;
+    this.reserve = reserve;
+    this.obligationAddress = obligationAddress;
+    this.userTokenAccountAddress = userTokenAccountAddress;
+    this.userCollateralAccountAddress = userCollateralAccountAddress;
+    this.setupIxs = [];
+    this.lendingIxs = [];
+    this.cleanupIxs = [];
+    this.preTxnIxs = [];
+    this.postTxnIxs = [];
+    this.depositReserves = depositReserves;
+    this.borrowReserves = borrowReserves;
   }
 
   static async initialize(
@@ -142,77 +149,103 @@ export class RelendAction {
     lendingMarketAddress?: PublicKey,
     hostAta?: PublicKey
   ) {
-    const solendInfo = (await (
-      await axios.get(`${API_ENDPOINT}/v1/markets/configs?scope=all&deployment=${environment}`)
-    ).data) as ConfigType
+    // const solendInfo = (await (
+    //   await axios.get(
+    //     `${API_ENDPOINT}/v1/markets/configs?scope=all&deployment=${environment}`
+    //   )
+    // ).data) as ConfigType;
 
-    let lendingMarket: MarketConfigType | undefined
+    const solendInfo = RELEND_INFO as ConfigType;
+
+    let lendingMarket: MarketConfigType | undefined;
     if (lendingMarketAddress) {
-      lendingMarket = solendInfo.find((market) => market.address == lendingMarketAddress.toBase58())
+      lendingMarket = solendInfo.find(
+        (market) => market.address == lendingMarketAddress.toBase58()
+      );
       if (!lendingMarket) {
-        throw `market address not found: ${lendingMarketAddress}`
+        throw `market address not found: ${lendingMarketAddress}`;
       }
     } else {
-      lendingMarket = solendInfo.find((market) => market.isPrimary) ?? solendInfo[0]
+      lendingMarket =
+        solendInfo.find((market) => market.isPrimary) ?? solendInfo[0];
     }
 
-    const seed = lendingMarket.address.slice(0, 32)
+    const seed = lendingMarket.address.slice(0, 32);
 
-    const programId = getProgramId(environment)
+    const programId = getProgramId(environment);
 
-    const obligationAddress = await PublicKey.createWithSeed(publicKey, seed, programId)
+    const obligationAddress = await PublicKey.createWithSeed(
+      publicKey,
+      seed,
+      programId
+    );
 
-    const reserve = lendingMarket.reserves.find((res) => res.liquidityToken.symbol === symbol)
+    const reserve = lendingMarket.reserves.find(
+      (res) => res.liquidityToken.symbol === symbol
+    );
     if (!reserve) {
-      throw new Error(`Could not find asset ${symbol} in reserves`)
+      throw new Error(`Could not find asset ${symbol} in reserves`);
     }
 
-    const obligationAccountInfo = await connection.getAccountInfo(obligationAddress)
+    const obligationAccountInfo = await connection.getAccountInfo(
+      obligationAddress
+    );
 
-    let obligationDetails = null
-    const depositReserves: Array<PublicKey> = []
-    const borrowReserves: Array<PublicKey> = []
+    let obligationDetails = null;
+    const depositReserves: Array<PublicKey> = [];
+    const borrowReserves: Array<PublicKey> = [];
 
     if (obligationAccountInfo) {
-      obligationDetails = parseObligation(PublicKey.default, obligationAccountInfo)!.info
+      obligationDetails = parseObligation(
+        PublicKey.default,
+        obligationAccountInfo
+      )!.info;
 
       obligationDetails.deposits.forEach((deposit) => {
-        depositReserves.push(deposit.depositReserve)
-      })
+        depositReserves.push(deposit.depositReserve);
+      });
 
       obligationDetails.borrows.forEach((borrow) => {
-        borrowReserves.push(borrow.borrowReserve)
-      })
+        borrowReserves.push(borrow.borrowReserve);
+      });
     }
 
     // Union of addresses
     const distinctReserveCount =
       [
         ...Array.from(
-          new Set([...borrowReserves.map((e) => e.toBase58()), ...(action === "borrow" ? [reserve.address] : [])])
+          new Set([
+            ...borrowReserves.map((e) => e.toBase58()),
+            ...(action === "borrow" ? [reserve.address] : []),
+          ])
         ),
       ].length +
       [
         ...Array.from(
-          new Set([...depositReserves.map((e) => e.toBase58()), ...(action === "deposit" ? [reserve.address] : [])])
+          new Set([
+            ...depositReserves.map((e) => e.toBase58()),
+            ...(action === "deposit" ? [reserve.address] : []),
+          ])
         ),
-      ].length
+      ].length;
 
     if (distinctReserveCount > POSITION_LIMIT) {
-      throw Error(`Obligation already has max number of positions: ${POSITION_LIMIT}`)
+      throw Error(
+        `Obligation already has max number of positions: ${POSITION_LIMIT}`
+      );
     }
 
-    const tokenInfo = getTokenInfo(symbol, lendingMarket)
+    const tokenInfo = getTokenInfo(symbol, lendingMarket);
     const userTokenAccountAddress = await getAssociatedTokenAddress(
       new PublicKey(tokenInfo.liquidityToken.mint),
       publicKey,
       true
-    )
+    );
     const userCollateralAccountAddress = await getAssociatedTokenAddress(
       new PublicKey(reserve.collateralMintAddress),
       publicKey,
       true
-    )
+    );
 
     return new RelendAction(
       programId,
@@ -231,7 +264,7 @@ export class RelendAction {
       depositReserves,
       borrowReserves,
       hostAta
-    )
+    );
   }
 
   static async buildDepositTxns(
@@ -250,12 +283,12 @@ export class RelendAction {
       connection,
       environment,
       lendingMarketAddress
-    )
+    );
 
-    await axn.addSupportIxs("deposit")
-    await axn.addDepositIx()
+    await axn.addSupportIxs("deposit");
+    await axn.addDepositIx();
 
-    return axn
+    return axn;
   }
 
   static async buildBorrowTxns(
@@ -276,12 +309,12 @@ export class RelendAction {
       environment,
       lendingMarketAddress,
       hostAta
-    )
+    );
 
-    await axn.addSupportIxs("borrow")
-    await axn.addBorrowIx()
+    await axn.addSupportIxs("borrow");
+    await axn.addBorrowIx();
 
-    return axn
+    return axn;
   }
   static async buildDepositReserveLiquidityTxns(
     connection: Connection,
@@ -299,10 +332,10 @@ export class RelendAction {
       connection,
       environment,
       lendingMarketAddress
-    )
-    await axn.addSupportIxs("mint")
-    await axn.addDepositReserveLiquidityIx()
-    return axn
+    );
+    await axn.addSupportIxs("mint");
+    await axn.addDepositReserveLiquidityIx();
+    return axn;
   }
 
   static async buildRedeemReserveCollateralTxns(
@@ -321,10 +354,10 @@ export class RelendAction {
       connection,
       environment,
       lendingMarketAddress
-    )
-    await axn.addSupportIxs("redeem")
-    await axn.addRedeemReserveCollateralIx()
-    return axn
+    );
+    await axn.addSupportIxs("redeem");
+    await axn.addRedeemReserveCollateralIx();
+    return axn;
   }
 
   static async buildDepositObligationCollateralTxns(
@@ -343,10 +376,10 @@ export class RelendAction {
       connection,
       environment,
       lendingMarketAddress
-    )
-    await axn.addSupportIxs("depositCollateral")
-    await axn.addDepositObligationCollateralIx()
-    return axn
+    );
+    await axn.addSupportIxs("depositCollateral");
+    await axn.addDepositObligationCollateralIx();
+    return axn;
   }
 
   static async buildWithdrawTxns(
@@ -365,12 +398,12 @@ export class RelendAction {
       connection,
       environment,
       lendingMarketAddress
-    )
+    );
 
-    await axn.addSupportIxs("withdraw")
-    await axn.addWithdrawIx()
+    await axn.addSupportIxs("withdraw");
+    await axn.addWithdrawIx();
 
-    return axn
+    return axn;
   }
 
   static async buildRepayTxns(
@@ -389,78 +422,96 @@ export class RelendAction {
       connection,
       environment,
       lendingMarketAddress
-    )
+    );
 
-    await axn.addSupportIxs("repay")
-    await axn.addRepayIx()
+    await axn.addSupportIxs("repay");
+    await axn.addRepayIx();
 
-    return axn
+    return axn;
   }
 
   async getTransactions() {
     const txns: {
-      preLendingTxn: Transaction | null
-      lendingTxn: Transaction | null
-      postLendingTxn: Transaction | null
+      preLendingTxn: Transaction | null;
+      lendingTxn: Transaction | null;
+      postLendingTxn: Transaction | null;
     } = {
       preLendingTxn: null,
       lendingTxn: null,
       postLendingTxn: null,
-    }
+    };
 
     if (this.preTxnIxs.length) {
       txns.preLendingTxn = new Transaction({
         feePayer: this.publicKey,
         recentBlockhash: (await this.connection.getRecentBlockhash()).blockhash,
-      }).add(...this.preTxnIxs)
+      }).add(...this.preTxnIxs);
     }
 
     txns.lendingTxn = new Transaction({
       feePayer: this.publicKey,
       recentBlockhash: (await this.connection.getRecentBlockhash()).blockhash,
-    }).add(...this.setupIxs, ...this.lendingIxs, ...this.cleanupIxs)
+    }).add(...this.setupIxs, ...this.lendingIxs, ...this.cleanupIxs);
 
     if (this.postTxnIxs.length) {
       txns.postLendingTxn = new Transaction({
         feePayer: this.publicKey,
         recentBlockhash: (await this.connection.getRecentBlockhash()).blockhash,
-      }).add(...this.postTxnIxs)
+      }).add(...this.postTxnIxs);
     }
 
-    return txns
+    return txns;
   }
 
   async sendTransactions(
-    sendTransaction: (txn: Transaction, connection: Connection) => Promise<TransactionSignature>,
+    sendTransaction: (
+      txn: Transaction,
+      connection: Connection
+    ) => Promise<TransactionSignature>,
     preCallback?: () => void,
     lendingCallback?: () => void,
     postCallback?: () => void
   ) {
-    const txns = await this.getTransactions()
+    const txns = await this.getTransactions();
 
-    await this.sendSingleTransaction(txns.preLendingTxn, sendTransaction, preCallback)
+    await this.sendSingleTransaction(
+      txns.preLendingTxn,
+      sendTransaction,
+      preCallback
+    );
 
-    const signature = await this.sendSingleTransaction(txns.lendingTxn, sendTransaction, lendingCallback)
+    const signature = await this.sendSingleTransaction(
+      txns.lendingTxn,
+      sendTransaction,
+      lendingCallback
+    );
 
-    await this.sendSingleTransaction(txns.postLendingTxn, sendTransaction, postCallback)
+    await this.sendSingleTransaction(
+      txns.postLendingTxn,
+      sendTransaction,
+      postCallback
+    );
 
-    return signature
+    return signature;
   }
 
   private async sendSingleTransaction(
     txn: Transaction | null,
-    sendTransaction: (txn: Transaction, connection: Connection) => Promise<TransactionSignature>,
+    sendTransaction: (
+      txn: Transaction,
+      connection: Connection
+    ) => Promise<TransactionSignature>,
     callback?: () => void
   ) {
-    if (!txn) return ""
+    if (!txn) return "";
 
-    const signature = await sendTransaction(txn, this.connection)
+    const signature = await sendTransaction(txn, this.connection);
     if (callback) {
-      callback()
+      callback();
     }
-    await this.connection.confirmTransaction(signature)
+    await this.connection.confirmTransaction(signature);
 
-    return signature
+    return signature;
   }
 
   addDepositIx() {
@@ -482,7 +533,7 @@ export class RelendAction {
         this.publicKey, // transferAuthority
         this.programId
       )
-    )
+    );
   }
 
   addDepositReserveLiquidityIx() {
@@ -499,7 +550,7 @@ export class RelendAction {
         this.publicKey, // transferAuthority
         this.programId
       )
-    )
+    );
   }
 
   addRedeemReserveCollateralIx() {
@@ -516,7 +567,7 @@ export class RelendAction {
         this.publicKey, // transferAuthority
         this.programId
       )
-    )
+    );
   }
 
   addDepositObligationCollateralIx() {
@@ -532,7 +583,7 @@ export class RelendAction {
         this.publicKey, // transferAuthority
         this.programId
       )
-    )
+    );
   }
 
   addBorrowIx() {
@@ -550,28 +601,40 @@ export class RelendAction {
         this.programId,
         this.hostAta
       )
-    )
+    );
   }
 
   async addWithdrawIx() {
-    const buffer = await this.connection.getAccountInfo(new PublicKey(this.reserve.address), "processed")
+    const buffer = await this.connection.getAccountInfo(
+      new PublicKey(this.reserve.address),
+      "processed"
+    );
 
     if (!buffer) {
-      throw Error(`Unable to fetch reserve data for ${this.reserve.liquidityToken.name}`)
+      throw Error(
+        `Unable to fetch reserve data for ${this.reserve.liquidityToken.name}`
+      );
     }
 
-    const parsedData = parseReserve(new PublicKey(this.reserve.address), buffer)?.info
+    const parsedData = parseReserve(
+      new PublicKey(this.reserve.address),
+      buffer
+    )?.info;
 
     if (!parsedData) {
-      throw Error(`Unable to parse data of reserve ${this.reserve.liquidityToken.name}`)
+      throw Error(
+        `Unable to parse data of reserve ${this.reserve.liquidityToken.name}`
+      );
     }
 
-    const totalBorrowsWads = parsedData.liquidity.borrowedAmountWads
-    const totalLiquidityWads = parsedData.liquidity.availableAmount.mul(new BN(WAD))
-    const totalDepositsWads = totalBorrowsWads.add(totalLiquidityWads)
+    const totalBorrowsWads = parsedData.liquidity.borrowedAmountWads;
+    const totalLiquidityWads = parsedData.liquidity.availableAmount.mul(
+      new BN(WAD)
+    );
+    const totalDepositsWads = totalBorrowsWads.add(totalLiquidityWads);
     const cTokenExchangeRate = new BigNumber(totalDepositsWads.toString())
       .div(parsedData.collateral.mintTotalSupply.toString())
-      .div(WAD)
+      .div(WAD);
 
     this.lendingIxs.push(
       withdrawObligationCollateralAndRedeemReserveLiquidity(
@@ -596,7 +659,7 @@ export class RelendAction {
         this.publicKey, // transferAuthority
         this.programId
       )
-    )
+    );
   }
 
   async addRepayIx() {
@@ -611,17 +674,17 @@ export class RelendAction {
         this.publicKey,
         this.programId
       )
-    )
+    );
   }
 
   async addSupportIxs(action: ActionType) {
     if (["withdraw", "borrow"].includes(action)) {
-      await this.addRefreshIxs()
+      await this.addRefreshIxs();
     }
     if (!["mint", "redeem"].includes(action)) {
-      await this.addObligationIxs()
+      await this.addObligationIxs();
     }
-    await this.addAtaIxs(action)
+    await this.addAtaIxs(action);
   }
 
   private async addRefreshIxs() {
@@ -632,12 +695,14 @@ export class RelendAction {
         ...this.borrowReserves.map((e) => e.toBase58()),
         this.reserve.address,
       ]),
-    ]
+    ];
 
     allReserveAddresses.forEach((reserveAddress) => {
-      const reserveInfo = this.lendingMarket.reserves.find((reserve) => reserve.address === reserveAddress)
+      const reserveInfo = this.lendingMarket.reserves.find(
+        (reserve) => reserve.address === reserveAddress
+      );
       if (!reserveInfo) {
-        throw new Error(`Could not find asset ${reserveAddress} in reserves`)
+        throw new Error(`Could not find asset ${reserveAddress} in reserves`);
       }
 
       const refreshReserveIx = refreshReserveInstruction(
@@ -645,22 +710,25 @@ export class RelendAction {
         this.programId,
         new PublicKey(reserveInfo.pythOracle),
         new PublicKey(reserveInfo.switchboardOracle)
-      )
-      this.setupIxs.push(refreshReserveIx)
-    })
+      );
+      this.setupIxs.push(refreshReserveIx);
+    });
 
     const refreshObligationIx = refreshObligationInstruction(
       this.obligationAddress,
       this.depositReserves,
       this.borrowReserves,
       this.programId
-    )
-    this.setupIxs.push(refreshObligationIx)
+    );
+    this.setupIxs.push(refreshObligationIx);
   }
 
   private async addObligationIxs() {
     if (!this.obligationAccountInfo) {
-      const obligationAccountInfoRentExempt = await this.connection.getMinimumBalanceForRentExemption(OBLIGATION_SIZE)
+      const obligationAccountInfoRentExempt =
+        await this.connection.getMinimumBalanceForRentExemption(
+          OBLIGATION_SIZE
+        );
 
       this.setupIxs.push(
         SystemProgram.createAccountWithSeed({
@@ -672,124 +740,158 @@ export class RelendAction {
           space: OBLIGATION_SIZE,
           programId: this.programId,
         })
-      )
+      );
       const initObligationIx = initObligationInstruction(
         this.obligationAddress,
         new PublicKey(this.lendingMarket.address),
         this.publicKey,
         this.programId
-      )
-      this.setupIxs.push(initObligationIx)
+      );
+      this.setupIxs.push(initObligationIx);
     }
   }
 
   private async addAtaIxs(action: ActionType) {
     if (this.symbol === "SOL") {
-      await this.updateWSOLAccount(action)
+      await this.updateWSOLAccount(action);
     }
 
-    if ((action === "withdraw" || action === "borrow" || action === "redeem") && this.symbol !== "SOL") {
-      const userTokenAccountInfo = await this.connection.getAccountInfo(this.userTokenAccountAddress)
+    if (
+      (action === "withdraw" || action === "borrow" || action === "redeem") &&
+      this.symbol !== "SOL"
+    ) {
+      const userTokenAccountInfo = await this.connection.getAccountInfo(
+        this.userTokenAccountAddress
+      );
       if (!userTokenAccountInfo) {
-        const createUserTokenAccountIx = createAssociatedTokenAccountInstruction(
-          this.publicKey,
-          this.userTokenAccountAddress,
-          this.publicKey,
-          new PublicKey(this.reserve.liquidityToken.mint)
-        )
+        const createUserTokenAccountIx =
+          createAssociatedTokenAccountInstruction(
+            this.publicKey,
+            this.userTokenAccountAddress,
+            this.publicKey,
+            new PublicKey(this.reserve.liquidityToken.mint)
+          );
 
         if (this.positions === POSITION_LIMIT && this.hostAta) {
-          this.preTxnIxs.push(createUserTokenAccountIx)
+          this.preTxnIxs.push(createUserTokenAccountIx);
         } else {
-          this.setupIxs.push(createUserTokenAccountIx)
+          this.setupIxs.push(createUserTokenAccountIx);
         }
       }
     }
 
     if (action === "withdraw" || action === "mint" || action === "deposit") {
-      const userCollateralAccountInfo = await this.connection.getAccountInfo(this.userCollateralAccountAddress)
+      const userCollateralAccountInfo = await this.connection.getAccountInfo(
+        this.userCollateralAccountAddress
+      );
 
       if (!userCollateralAccountInfo) {
-        const createUserCollateralAccountIx = createAssociatedTokenAccountInstruction(
-          this.publicKey,
-          this.userCollateralAccountAddress,
-          this.publicKey,
-          new PublicKey(this.reserve.collateralMintAddress)
-        )
+        const createUserCollateralAccountIx =
+          createAssociatedTokenAccountInstruction(
+            this.publicKey,
+            this.userCollateralAccountAddress,
+            this.publicKey,
+            new PublicKey(this.reserve.collateralMintAddress)
+          );
 
         if (this.positions === POSITION_LIMIT && this.symbol === "SOL") {
-          this.preTxnIxs.push(createUserCollateralAccountIx)
+          this.preTxnIxs.push(createUserCollateralAccountIx);
         } else {
-          this.setupIxs.push(createUserCollateralAccountIx)
+          this.setupIxs.push(createUserCollateralAccountIx);
         }
       }
     }
   }
 
   private async updateWSOLAccount(action: ActionType) {
-    const preIxs: Array<TransactionInstruction> = []
-    const postIxs: Array<TransactionInstruction> = []
+    const preIxs: Array<TransactionInstruction> = [];
+    const postIxs: Array<TransactionInstruction> = [];
 
-    let safeRepay = new BN(this.amount)
+    let safeRepay = new BN(this.amount);
 
-    if (this.obligationAccountInfo && action === "repay" && this.amount.eq(new BN(U64_MAX))) {
-      const buffer = await this.connection.getAccountInfo(new PublicKey(this.reserve.address), "processed")
+    if (
+      this.obligationAccountInfo &&
+      action === "repay" &&
+      this.amount.eq(new BN(U64_MAX))
+    ) {
+      const buffer = await this.connection.getAccountInfo(
+        new PublicKey(this.reserve.address),
+        "processed"
+      );
 
       if (!buffer) {
-        throw Error(`Unable to fetch reserve data for ${this.reserve.liquidityToken.name}`)
+        throw Error(
+          `Unable to fetch reserve data for ${this.reserve.liquidityToken.name}`
+        );
       }
 
-      const parsedData = parseReserve(new PublicKey(this.reserve.address), buffer)?.info
+      const parsedData = parseReserve(
+        new PublicKey(this.reserve.address),
+        buffer
+      )?.info;
 
       if (!parsedData) {
-        throw Error(`Unable to parse data of reserve ${this.reserve.liquidityToken.name}`)
+        throw Error(
+          `Unable to parse data of reserve ${this.reserve.liquidityToken.name}`
+        );
       }
 
       const borrow = this.obligationAccountInfo.borrows.find(
         (borrow) => borrow.borrowReserve.toBase58() === this.reserve.address
-      )
+      );
 
       if (!borrow) {
-        throw Error(`Unable to find obligation borrow to repay for ${this.obligationAccountInfo.owner.toBase58()}`)
+        throw Error(
+          `Unable to find obligation borrow to repay for ${this.obligationAccountInfo.owner.toBase58()}`
+        );
       }
 
       safeRepay = new BN(
         Math.floor(
           new BigNumber(borrow.borrowedAmountWads.toString())
-            .multipliedBy(parsedData.liquidity.cumulativeBorrowRateWads.toString())
+            .multipliedBy(
+              parsedData.liquidity.cumulativeBorrowRateWads.toString()
+            )
             .dividedBy(borrow.cumulativeBorrowRateWads.toString())
             .dividedBy(WAD)
             .plus(SOL_PADDING_FOR_INTEREST)
             .toNumber()
         ).toString()
-      )
+      );
     }
 
-    const userWSOLAccountInfo = await this.connection.getAccountInfo(this.userTokenAccountAddress)
+    const userWSOLAccountInfo = await this.connection.getAccountInfo(
+      this.userTokenAccountAddress
+    );
 
-    const rentExempt = await getMinimumBalanceForRentExemptAccount(this.connection)
+    const rentExempt = await getMinimumBalanceForRentExemptAccount(
+      this.connection
+    );
 
-    const sendAction = action === "deposit" || action === "repay" || action === "mint"
+    const sendAction =
+      action === "deposit" || action === "repay" || action === "mint";
     const transferLamportsIx = SystemProgram.transfer({
       fromPubkey: this.publicKey,
       toPubkey: this.userTokenAccountAddress,
-      lamports: (userWSOLAccountInfo ? 0 : rentExempt) + (sendAction ? parseInt(safeRepay.toString(), 10) : 0),
-    })
-    preIxs.push(transferLamportsIx)
+      lamports:
+        (userWSOLAccountInfo ? 0 : rentExempt) +
+        (sendAction ? parseInt(safeRepay.toString(), 10) : 0),
+    });
+    preIxs.push(transferLamportsIx);
 
     const closeWSOLAccountIx = createCloseAccountInstruction(
       this.userTokenAccountAddress,
       this.publicKey,
       this.publicKey,
       []
-    )
+    );
 
     if (userWSOLAccountInfo) {
-      const syncIx = syncNative(this.userTokenAccountAddress)
+      const syncIx = syncNative(this.userTokenAccountAddress);
       if (sendAction) {
-        preIxs.push(syncIx)
+        preIxs.push(syncIx);
       } else {
-        postIxs.push(closeWSOLAccountIx)
+        postIxs.push(closeWSOLAccountIx);
       }
     } else {
       const createUserWSOLAccountIx = createAssociatedTokenAccountInstruction(
@@ -797,17 +899,17 @@ export class RelendAction {
         this.userTokenAccountAddress,
         this.publicKey,
         NATIVE_MINT
-      )
-      preIxs.push(createUserWSOLAccountIx)
-      postIxs.push(closeWSOLAccountIx)
+      );
+      preIxs.push(createUserWSOLAccountIx);
+      postIxs.push(closeWSOLAccountIx);
     }
 
     if (this.positions && this.positions >= POSITION_LIMIT) {
-      this.preTxnIxs.push(...preIxs)
-      this.postTxnIxs.push(...postIxs)
+      this.preTxnIxs.push(...preIxs);
+      this.postTxnIxs.push(...postIxs);
     } else {
-      this.setupIxs.push(...preIxs)
-      this.cleanupIxs.push(...postIxs)
+      this.setupIxs.push(...preIxs);
+      this.cleanupIxs.push(...postIxs);
     }
   }
 }

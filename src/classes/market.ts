@@ -1,25 +1,31 @@
-import { Connection, PublicKey } from "@solana/web3.js"
-import { RelendObligation } from "./obligation"
-import { RelendReserve } from "./reserve"
-import axios from "axios"
-import { getProgramId } from "./constants"
-import { RewardsDataType, ExternalRewardStatType, MarketConfigType } from "./shared"
-import { parseObligation } from "../state"
+import { Connection, PublicKey } from "@solana/web3.js";
+import axios from "axios";
+import { RELEND_INFO } from "../core";
+import { parseObligation } from "../state";
+import { getProgramId } from "./constants";
+import { RelendObligation } from "./obligation";
+import { RelendReserve } from "./reserve";
+import {
+  ExternalRewardStatType,
+  MarketConfigType,
+  RewardsDataType,
+} from "./shared";
 
-type Config = Array<MarketConfigType>
+type Config = Array<MarketConfigType>;
 
-const API_ENDPOINT = "https://api.solend.fi"
+// const API_ENDPOINT = "https://api.solend.fi"
+const API_ENDPOINT = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 export class RelendMarket {
-  private connection: Connection
+  private connection: Connection;
 
-  reserves: Array<RelendReserve>
+  reserves: Array<RelendReserve>;
 
-  rewardsData: RewardsDataType | null
+  rewardsData: RewardsDataType | null;
 
-  config: MarketConfigType
+  config: MarketConfigType;
 
-  programId: PublicKey
+  programId: PublicKey;
 
   private constructor(
     connection: Connection,
@@ -27,11 +33,11 @@ export class RelendMarket {
     reserves: Array<RelendReserve>,
     programId: PublicKey
   ) {
-    this.connection = connection
-    this.reserves = reserves
-    this.rewardsData = null
-    this.config = config
-    this.programId = programId
+    this.connection = connection;
+    this.reserves = reserves;
+    this.rewardsData = null;
+    this.config = config;
+    this.programId = programId;
   }
 
   static async initialize(
@@ -39,64 +45,92 @@ export class RelendMarket {
     environment: "production" | "devnet" | "beta" = "production",
     marketAddress?: string
   ) {
-    const config = (await (
-      await axios.get(`${API_ENDPOINT}/v1/markets/configs?scope=all&deployment=${environment}`)
-    ).data) as Config
+    // const config = (await (
+    //   await axios.get(
+    //     `${API_ENDPOINT}/v1/markets/configs?scope=all&deployment=${environment}`
+    //   )
+    // ).data) as Config;
+    const config = RELEND_INFO as Config;
 
-    let marketConfig
+    let marketConfig;
     if (marketAddress) {
-      marketConfig = config.find((market) => market.address == marketAddress) ?? null
+      marketConfig =
+        config.find((market) => market.address == marketAddress) ?? null;
       if (!marketConfig) {
-        throw `market address not found: ${marketAddress}`
+        throw `market address not found: ${marketAddress}`;
       }
     } else {
-      marketConfig = config.find((market) => market.isPrimary) ?? config[0]
+      marketConfig = config.find((market) => market.isPrimary) ?? config[0];
     }
 
-    const reserves = marketConfig.reserves.map((res) => new RelendReserve(res, connection))
+    const reserves = marketConfig.reserves.map(
+      (res) => new RelendReserve(res, connection)
+    );
 
-    return new RelendMarket(connection, marketConfig, reserves, getProgramId(environment))
+    return new RelendMarket(
+      connection,
+      marketConfig,
+      reserves,
+      getProgramId(environment)
+    );
   }
 
   async fetchObligationByWallet(publicKey: PublicKey) {
-    const { config, reserves } = this
+    const { config, reserves } = this;
     if (!config) {
-      throw Error("Market must be initialized to call initialize.")
+      throw Error("Market must be initialized to call initialize.");
     }
-    const obligationAddress = await PublicKey.createWithSeed(publicKey, config.address.slice(0, 32), this.programId)
+    const obligationAddress = await PublicKey.createWithSeed(
+      publicKey,
+      config.address.slice(0, 32),
+      this.programId
+    );
 
-    const rawObligationData = await this.connection.getAccountInfo(obligationAddress)
+    const rawObligationData = await this.connection.getAccountInfo(
+      obligationAddress
+    );
 
     if (!rawObligationData) {
-      return null
+      return null;
     }
 
-    const parsedObligation = parseObligation(PublicKey.default, rawObligationData!)
+    const parsedObligation = parseObligation(
+      PublicKey.default,
+      rawObligationData!
+    );
 
     if (!parsedObligation) {
-      throw Error("Could not parse obligation.")
+      throw Error("Could not parse obligation.");
     }
 
     if (!reserves.every((reserve) => reserve.stats)) {
-      await this.loadReserves()
+      await this.loadReserves();
     }
 
-    const obligationInfo = parsedObligation.info
+    const obligationInfo = parsedObligation.info;
 
-    return new RelendObligation(publicKey, obligationAddress, obligationInfo, reserves)
+    return new RelendObligation(
+      publicKey,
+      obligationAddress,
+      obligationInfo,
+      reserves
+    );
   }
 
   async loadAll() {
-    const promises = [this.loadReserves(), this.loadRewards()]
+    const promises = [this.loadReserves(), this.loadRewards()];
 
-    await Promise.all(promises)
+    await Promise.all(promises);
   }
 
   private async loadExternalRewardData() {
-    const data = (await axios.get(`${API_ENDPOINT}/liquidity-mining/external-reward-stats-v2?flat=true`))
-      .data as Promise<Array<ExternalRewardStatType>>
+    const data = (
+      await axios.get(
+        `${API_ENDPOINT}/liquidity-mining/external-reward-stats-v2?flat=true`
+      )
+    ).data as Promise<Array<ExternalRewardStatType>>;
 
-    return data
+    return data;
   }
 
   private async loadPriceData(symbols: Array<string>) {
@@ -104,11 +138,11 @@ export class RelendMarket {
       await axios.get(`${API_ENDPOINT}/v1/prices/?symbols=${symbols.join(",")}`)
     ).data) as {
       results: Array<{
-        identifier: string
-        price: string
-        source: string
-      }>
-    }
+        identifier: string;
+        price: string;
+        source: string;
+      }>;
+    };
 
     return data.results.reduce(
       (acc, price) => ({
@@ -116,14 +150,14 @@ export class RelendMarket {
         [price.identifier]: Number(price.price),
       }),
       {} as { [key: string]: number }
-    )
+    );
   }
 
   private getLatestRewardRate(
     rewardRates: Array<{
-      beginningSlot: number
-      rewardRate: string
-      name?: string
+      beginningSlot: number;
+      rewardRate: string;
+      name?: string;
     }>,
     slot: number
   ) {
@@ -132,48 +166,65 @@ export class RelendMarket {
       .reduce((v1, v2) => (v1.beginningSlot > v2.beginningSlot ? v1 : v2), {
         beginningSlot: 0,
         rewardRate: "0",
-      })
+      });
   }
 
   async loadRewards() {
     if (!this.config) {
-      throw Error("Market must be initialized to call loadRewards.")
+      throw Error("Market must be initialized to call loadRewards.");
     }
 
-    const promises = [this.loadExternalRewardData(), this.connection.getSlot("finalized")] as const
+    const promises = [
+      this.loadExternalRewardData(),
+      this.connection.getSlot("finalized"),
+    ] as const;
 
-    const [externalRewards, currentSlot] = await Promise.all(promises)
+    const [externalRewards, currentSlot] = await Promise.all(promises);
 
-    const querySymbols = [...Array.from(new Set(externalRewards.map((reward) => reward.rewardSymbol)))]
+    const querySymbols = [
+      ...Array.from(
+        new Set(externalRewards.map((reward) => reward.rewardSymbol))
+      ),
+    ];
 
-    const priceData = await this.loadPriceData(querySymbols.concat("SLND"))
+    const priceData = await this.loadPriceData(querySymbols.concat("SLND"));
 
     this.rewardsData = this.reserves.reduce((acc, reserve) => {
       const supply = [
         ...externalRewards
           .filter(
-            (externalReward) => externalReward.reserveID === reserve.config.address && externalReward.side === "supply"
+            (externalReward) =>
+              externalReward.reserveID === reserve.config.address &&
+              externalReward.side === "supply"
           )
           .map((externalReward) => ({
-            rewardRate: this.getLatestRewardRate(externalReward.rewardRates, currentSlot).rewardRate,
+            rewardRate: this.getLatestRewardRate(
+              externalReward.rewardRates,
+              currentSlot
+            ).rewardRate,
             rewardMint: externalReward.rewardMint,
             rewardSymbol: externalReward.rewardSymbol,
             price: priceData[externalReward.rewardSymbol],
           })),
-      ].filter(Boolean)
+      ].filter(Boolean);
 
       const borrow = [
         ...externalRewards
           .filter(
-            (externalReward) => externalReward.reserveID === reserve.config.address && externalReward.side === "borrow"
+            (externalReward) =>
+              externalReward.reserveID === reserve.config.address &&
+              externalReward.side === "borrow"
           )
           .map((externalReward) => ({
-            rewardRate: this.getLatestRewardRate(externalReward.rewardRates, currentSlot).rewardRate,
+            rewardRate: this.getLatestRewardRate(
+              externalReward.rewardRates,
+              currentSlot
+            ).rewardRate,
             rewardMint: externalReward.rewardMint,
             rewardSymbol: externalReward.rewardSymbol,
             price: priceData[externalReward.rewardSymbol],
           })),
-      ].filter(Boolean)
+      ].filter(Boolean);
 
       return {
         ...acc,
@@ -181,34 +232,41 @@ export class RelendMarket {
           supply,
           borrow,
         },
-      }
-    }, {})
+      };
+    }, {});
 
     const refreshReserves = this.reserves.map((reserve) => {
-      return reserve.load(this.rewardsData ?? undefined)
-    })
+      return reserve.load(this.rewardsData ?? undefined);
+    });
 
-    await Promise.all(refreshReserves)
+    await Promise.all(refreshReserves);
   }
 
   async loadReserves() {
-    const addresses = this.reserves.map((reserve) => new PublicKey(reserve.config.address))
-    const reserveAccounts = await this.connection.getMultipleAccountsInfo(addresses, "processed")
+    const addresses = this.reserves.map(
+      (reserve) => new PublicKey(reserve.config.address)
+    );
+    const reserveAccounts = await this.connection.getMultipleAccountsInfo(
+      addresses,
+      "processed"
+    );
 
     const loadReserves = this.reserves.map((reserve, index) => {
-      reserve.setBuffer(reserveAccounts[index])
-      return reserve.load()
-    })
+      reserve.setBuffer(reserveAccounts[index]);
+      return reserve.load();
+    });
 
-    await Promise.all(loadReserves)
+    await Promise.all(loadReserves);
   }
 
   async refreshAll() {
     const promises = [
-      this.reserves.every((reserve) => reserve.stats) ? this.loadReserves() : null,
+      this.reserves.every((reserve) => reserve.stats)
+        ? this.loadReserves()
+        : null,
       this.rewardsData ? this.loadRewards() : null,
-    ].filter((x) => x)
+    ].filter((x) => x);
 
-    await Promise.all(promises)
+    await Promise.all(promises);
   }
 }
