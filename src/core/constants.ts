@@ -35,8 +35,9 @@ export const RELEND_INFO = [
         address: "EoKWjZdRNpjk19n7Ys4Q8UWsS6VrAPFc5tdsJTcyGmXG",
         collateralMintAddress: "3re7zBt3EKycwzC1vXJTrprH39YbFK5HdFC2EB9yNCrK",
         collateralSupplyAddress: "5Ndhmf8RW9NUsHeDpFDe41tyj9khp4tEtnwp5mwi3jw3",
-        liquidityAddress: "",
-        liquidityFeeReceiverAddress: "",
+        liquidityAddress: "981pAHyEAN8aGKhG9X6p9CiH91rcGTRx2EwJvYFYRsr8",
+        liquidityFeeReceiverAddress:
+          "GrGPW4p5EuKpcAHTsmkCst4CbaTjzmxmtEaUUDtnm9tm",
         userBorrowCap: 300000,
         userSupplyCap: 150000,
       },
