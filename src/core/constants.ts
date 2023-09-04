@@ -53,7 +53,7 @@ export const RELEND_INFO = [
         },
         pythOracle: "C2UDScHU1ex5hDUok5hT1G7TQgK7Qgrb5J66U5sTpr25",
         switchboardOracle: "C2UDScHU1ex5hDUok5hT1G7TQgK7Qgrb5J66U5sTpr23",
-        address: "EoKWjZdRNpjk19n7Ys4Q8UWsS6VrAPFc5tdsJTcyGmXG",
+        address: "AcvU2Rac5u37S7BDeRC5LfTj3LYG6YNsM8bz8fjUPPb2",
         collateralMintAddress: "FZrSbYgAwZLRz2ZZXqZF98bAnxKyT6XAhpeMaYEsWQTS",
         collateralSupplyAddress: "EuVZWtYvEspsfSVn28GfyjgdmvWXpvj9xsKq3J14b8fw",
         liquidityAddress: "2PfmuZWF6TjBABrLvTn6jVV23uNyC2C3c7vbtWKWntnf",
