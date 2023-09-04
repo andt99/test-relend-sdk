@@ -22,8 +22,8 @@ export const RELEND_INFO = [
     reserves: [
       {
         liquidityToken: {
-          coingeckoID: "serum",
-          decimals: 6,
+          coingeckoID: "ReBTC",
+          decimals: 9,
           logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/SRMuApVNdxXokk5GT7XD5cUUgXMBCoAz2LHeuAoKWRt/logo.png",
           mint: "EP8rDeKVTfoB7awdGT1eM6XDNqjuoUTUWijEmFNvfhkT",
           name: "ReBTC",
@@ -38,6 +38,27 @@ export const RELEND_INFO = [
         liquidityAddress: "981pAHyEAN8aGKhG9X6p9CiH91rcGTRx2EwJvYFYRsr8",
         liquidityFeeReceiverAddress:
           "GrGPW4p5EuKpcAHTsmkCst4CbaTjzmxmtEaUUDtnm9tm",
+        userBorrowCap: 300000,
+        userSupplyCap: 150000,
+      },
+      {
+        liquidityToken: {
+          coingeckoID: "ReETH",
+          decimals: 9,
+          logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/SRMuApVNdxXokk5GT7XD5cUUgXMBCoAz2LHeuAoKWRt/logo.png",
+          mint: "GmwYjJ6o52QQqRWFJvvMVn34M2GqX9jyREhPSSiwrrW2",
+          name: "ReETH",
+          symbol: "ReETH",
+          volume24h: 9469492.009525744,
+        },
+        pythOracle: "C2UDScHU1ex5hDUok5hT1G7TQgK7Qgrb5J66U5sTpr25",
+        switchboardOracle: "C2UDScHU1ex5hDUok5hT1G7TQgK7Qgrb5J66U5sTpr23",
+        address: "EoKWjZdRNpjk19n7Ys4Q8UWsS6VrAPFc5tdsJTcyGmXG",
+        collateralMintAddress: "FZrSbYgAwZLRz2ZZXqZF98bAnxKyT6XAhpeMaYEsWQTS",
+        collateralSupplyAddress: "EuVZWtYvEspsfSVn28GfyjgdmvWXpvj9xsKq3J14b8fw",
+        liquidityAddress: "2PfmuZWF6TjBABrLvTn6jVV23uNyC2C3c7vbtWKWntnf",
+        liquidityFeeReceiverAddress:
+          "FTGaPHSa6TRF546LZAiJZGjvfrEd5sj6vBH4qeiitdPV",
         userBorrowCap: 300000,
         userSupplyCap: 150000,
       },
