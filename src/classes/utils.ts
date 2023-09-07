@@ -1,30 +1,40 @@
-import BigNumber from "bignumber.js"
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
+import {
+  PublicKey,
+  SYSVAR_RENT_PUBKEY,
+  SystemProgram,
+  TransactionInstruction,
+} from "@solana/web3.js";
+import BigNumber from "bignumber.js";
 
-const SLOT_RATE = 2
-const DAILY_SLOTS = 24 * 60 * 60 * SLOT_RATE
-const ANNUAL_SLOTS = 365 * DAILY_SLOTS * SLOT_RATE
+const SLOT_RATE = 2;
+const DAILY_SLOTS = 24 * 60 * 60 * SLOT_RATE;
+const ANNUAL_SLOTS = 365 * DAILY_SLOTS * SLOT_RATE;
 
 type ObligationFarmScoreType = {
-  obligationId: string
-  balance: string
-  debt: string
-  score: string
-  lastSlot: number
-  tokenMint: string
-  side: "supply" | "borrow"
-}
+  obligationId: string;
+  balance: string;
+  debt: string;
+  score: string;
+  lastSlot: number;
+  tokenMint: string;
+  side: "supply" | "borrow";
+};
 
 type RewardRate = {
-  beginningSlot: number
-  rewardRate: string
-  name?: string
-}
+  beginningSlot: number;
+  rewardRate: string;
+  name?: string;
+};
 
 function getLatestRewardRate(
   rewardRates: Array<{
-    beginningSlot: number
-    rewardRate: string
-    name?: string
+    beginningSlot: number;
+    rewardRate: string;
+    name?: string;
   }>,
   slot: number
 ) {
@@ -33,29 +43,29 @@ function getLatestRewardRate(
     .reduce((v1, v2) => (v1.beginningSlot > v2.beginningSlot ? v1 : v2), {
       beginningSlot: 0,
       rewardRate: "0",
-    })
+    });
 }
 
 export const calculateNewScore = (
   rewardStat: {
-    lastSlot: number
-    rewardRates: Array<RewardRate>
-    rewardsPerShare: string
-    totalBalance: string
+    lastSlot: number;
+    rewardRates: Array<RewardRate>;
+    rewardsPerShare: string;
+    totalBalance: string;
   },
   pool: ObligationFarmScoreType,
   rewardRate: string,
   endSlot: number,
   startSlot: number
 ) => {
-  const { balance, debt, score } = pool
-  const { rewardsPerShare, totalBalance } = rewardStat
+  const { balance, debt, score } = pool;
+  const { rewardsPerShare, totalBalance } = rewardStat;
 
-  const oldDebt = new BigNumber(debt)
-  const oldScore = new BigNumber(score)
-  const oldRewardsPerShare = new BigNumber(rewardsPerShare)
-  const oldBalance = new BigNumber(balance)
-  const totalBalanceVal = new BigNumber(totalBalance)
+  const oldDebt = new BigNumber(debt);
+  const oldScore = new BigNumber(score);
+  const oldRewardsPerShare = new BigNumber(rewardsPerShare);
+  const oldBalance = new BigNumber(balance);
+  const totalBalanceVal = new BigNumber(totalBalance);
 
   const newRewardsPerShare = !totalBalanceVal.isZero()
     ? oldRewardsPerShare.plus(
@@ -65,29 +75,81 @@ export const calculateNewScore = (
           .div(totalBalanceVal)
           .div(new BigNumber(ANNUAL_SLOTS))
       )
-    : new BigNumber(0)
+    : new BigNumber(0);
 
-  return oldScore.plus(newRewardsPerShare.times(oldBalance).minus(oldDebt))
-}
+  return oldScore.plus(newRewardsPerShare.times(oldBalance).minus(oldDebt));
+};
 
 export const estimateCurrentScore = (
   rewardStat: {
-    lastSlot: number
-    rewardRates: Array<RewardRate>
-    rewardsPerShare: string
-    totalBalance: string
+    lastSlot: number;
+    rewardRates: Array<RewardRate>;
+    rewardsPerShare: string;
+    totalBalance: string;
   },
   rewardScore: ObligationFarmScoreType,
   mostRecentSlot: number,
   mostRecentSlotTime: number
 ) => {
-  const { lastSlot, rewardRates } = rewardStat
+  const { lastSlot, rewardRates } = rewardStat;
 
-  const estimatedCurrentSlot = mostRecentSlot + SLOT_RATE * (Date.now() / 1000 - mostRecentSlotTime)
+  const estimatedCurrentSlot =
+    mostRecentSlot + SLOT_RATE * (Date.now() / 1000 - mostRecentSlotTime);
 
-  const { rewardRate } = getLatestRewardRate(rewardRates, estimatedCurrentSlot)
+  const { rewardRate } = getLatestRewardRate(rewardRates, estimatedCurrentSlot);
 
-  const currentScore = calculateNewScore(rewardStat, rewardScore, rewardRate, estimatedCurrentSlot, lastSlot)
+  const currentScore = calculateNewScore(
+    rewardStat,
+    rewardScore,
+    rewardRate,
+    estimatedCurrentSlot,
+    lastSlot
+  );
 
-  return currentScore
+  return currentScore;
+};
+
+export function createAssociatedTokenAccountInstruction(
+  payer: PublicKey,
+  associatedToken: PublicKey,
+  owner: PublicKey,
+  mint: PublicKey,
+  programId = TOKEN_PROGRAM_ID,
+  associatedTokenProgramId = ASSOCIATED_TOKEN_PROGRAM_ID
+): TransactionInstruction {
+  return buildAssociatedTokenAccountInstruction(
+    payer,
+    associatedToken,
+    owner,
+    mint,
+    Buffer.alloc(0),
+    programId,
+    associatedTokenProgramId
+  );
+}
+
+function buildAssociatedTokenAccountInstruction(
+  payer: PublicKey,
+  associatedToken: PublicKey,
+  owner: PublicKey,
+  mint: PublicKey,
+  instructionData: Buffer,
+  programId = TOKEN_PROGRAM_ID,
+  associatedTokenProgramId = ASSOCIATED_TOKEN_PROGRAM_ID
+): TransactionInstruction {
+  const keys = [
+    { pubkey: payer, isSigner: true, isWritable: true },
+    { pubkey: associatedToken, isSigner: false, isWritable: true },
+    { pubkey: owner, isSigner: false, isWritable: false },
+    { pubkey: mint, isSigner: false, isWritable: false },
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
+    { pubkey: programId, isSigner: false, isWritable: false },
+  ];
+
+  return new TransactionInstruction({
+    keys,
+    programId: associatedTokenProgramId,
+    data: instructionData,
+  });
 }

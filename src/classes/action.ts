@@ -1,6 +1,5 @@
 import {
   NATIVE_MINT,
-  createAssociatedTokenAccountInstruction,
   createCloseAccountInstruction,
   getAssociatedTokenAddress,
   getMinimumBalanceForRentExemptAccount,
@@ -39,6 +38,7 @@ import {
 import { parseReserve } from "../state/reserve";
 import { U64_MAX, WAD, getProgramId } from "./constants";
 import { ConfigType, MarketConfigType, ReserveConfigType } from "./shared";
+import { createAssociatedTokenAccountInstruction } from "./utils";
 
 // const API_ENDPOINT = "https://api.solend.fi"
 const API_ENDPOINT = process.env.NEXT_PUBLIC_BACKEND_URL;
