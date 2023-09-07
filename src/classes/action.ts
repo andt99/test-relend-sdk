@@ -753,13 +753,13 @@ export class RelendAction {
   }
 
   private async addAtaIxs(action: ActionType) {
-    if (this.symbol === "SOL") {
+    if (this.symbol === "RENEC") {
       await this.updateWSOLAccount(action);
     }
 
     if (
       (action === "withdraw" || action === "borrow" || action === "redeem") &&
-      this.symbol !== "SOL"
+      this.symbol !== "RENEC"
     ) {
       const userTokenAccountInfo = await this.connection.getAccountInfo(
         this.userTokenAccountAddress
@@ -795,7 +795,7 @@ export class RelendAction {
             new PublicKey(this.reserve.collateralMintAddress)
           );
 
-        if (this.positions === POSITION_LIMIT && this.symbol === "SOL") {
+        if (this.positions === POSITION_LIMIT && this.symbol === "RENEC") {
           this.preTxnIxs.push(createUserCollateralAccountIx);
         } else {
           this.setupIxs.push(createUserCollateralAccountIx);
