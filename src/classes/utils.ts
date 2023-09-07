@@ -143,7 +143,11 @@ function buildAssociatedTokenAccountInstruction(
     { pubkey: owner, isSigner: false, isWritable: false },
     { pubkey: mint, isSigner: false, isWritable: false },
     { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
+    {
+      pubkey: new PublicKey("SysvarRent111111111111111111111111111111111"),
+      isSigner: false,
+      isWritable: false,
+    },
     { pubkey: programId, isSigner: false, isWritable: false },
   ];
 
