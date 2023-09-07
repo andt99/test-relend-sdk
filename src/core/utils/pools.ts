@@ -1,11 +1,11 @@
-import { Connection, PublicKey } from "@solana/web3.js"
-import BigNumber from "bignumber.js"
-import SwitchboardProgram from "@switchboard-xyz/sbv2-lite"
-import { fetchPrices } from "./prices"
-import { calculateBorrowInterest, calculateSupplyInterest } from "./rates"
-import { PoolType, ReserveType } from "../types"
-import { parseReserve, Reserve } from "../../state"
-import { parseRateLimiter } from "./utils"
+import { Connection, PublicKey } from "@solana/web3.js";
+import SwitchboardProgram from "@switchboard-xyz/sbv2-lite";
+import BigNumber from "bignumber.js";
+import { Reserve, parseReserve } from "../../state";
+import { PoolType, ReserveType } from "../types";
+import { fetchPrices } from "./prices";
+import { calculateBorrowInterest, calculateSupplyInterest } from "./rates";
+import { parseRateLimiter } from "./utils";
 
 export async function fetchPools(
   oldPools: Array<PoolType>,
@@ -15,9 +15,15 @@ export async function fetchPools(
   currentSlot: number,
   debug?: boolean
 ) {
-  const reserves = (await getReservesFromChain(connection, switchboardProgram, programId, currentSlot, debug)).sort(
-    (a, b) => (a.totalSupply.isGreaterThan(b.totalSupply) ? -1 : 1)
-  )
+  const reserves = (
+    await getReservesFromChain(
+      connection,
+      switchboardProgram,
+      programId,
+      currentSlot,
+      debug
+    )
+  ).sort((a, b) => (a.totalSupply.isGreaterThan(b.totalSupply) ? -1 : 1));
 
   const pools = Object.fromEntries(
     oldPools.map((c) => [
@@ -27,65 +33,94 @@ export async function fetchPools(
         address: c.address,
         authorityAddress: c.authorityAddress,
         reserves: [] as Array<ReserveType>,
+        owner: c.owner,
       },
     ])
-  )
+  );
 
   reserves
-    .filter((reserve) => oldPools.map((c) => c.address).includes(reserve.poolAddress))
+    .filter((reserve) =>
+      oldPools.map((c) => c.address).includes(reserve.poolAddress)
+    )
     .forEach((reserve) => {
-      pools[reserve.poolAddress].reserves.push(reserve)
-    }, [])
+      pools[reserve.poolAddress].reserves.push(reserve);
+    }, []);
 
-  return pools
+  return pools;
 }
 
 export function formatReserve(
   reserve: {
-    pubkey: PublicKey
-    info: Reserve
+    pubkey: PublicKey;
+    info: Reserve;
   },
   price:
     | {
-        spotPrice: number
-        emaPrice: number
+        spotPrice: number;
+        emaPrice: number;
       }
     | undefined,
   currentSlot: number
 ) {
-  const decimals = reserve.info.liquidity.mintDecimals
-  const availableAmount = new BigNumber(reserve.info.liquidity.availableAmount.toString()).shiftedBy(-decimals)
-  const totalBorrow = new BigNumber(reserve.info.liquidity.borrowedAmountWads.toString()).shiftedBy(-18 - decimals)
+  const decimals = reserve.info.liquidity.mintDecimals;
+  const availableAmount = new BigNumber(
+    reserve.info.liquidity.availableAmount.toString()
+  ).shiftedBy(-decimals);
+  const totalBorrow = new BigNumber(
+    reserve.info.liquidity.borrowedAmountWads.toString()
+  ).shiftedBy(-18 - decimals);
   const accumulatedProtocolFees = new BigNumber(
     reserve.info.liquidity.accumulatedProtocolFeesWads.toString()
-  ).shiftedBy(-18 - decimals)
-  const totalSupply = totalBorrow.plus(availableAmount).minus(accumulatedProtocolFees)
-  const address = reserve.pubkey.toBase58()
+  ).shiftedBy(-18 - decimals);
+  const totalSupply = totalBorrow
+    .plus(availableAmount)
+    .minus(accumulatedProtocolFees);
+  const address = reserve.pubkey.toBase58();
   const priceResolved = price
     ? BigNumber(price.spotPrice)
-    : new BigNumber(reserve.info.liquidity.marketPrice.toString()).shiftedBy(-18)
+    : new BigNumber(reserve.info.liquidity.marketPrice.toString()).shiftedBy(
+        -18
+      );
 
   const cTokenExchangeRate = new BigNumber(totalSupply).dividedBy(
-    new BigNumber(reserve.info.collateral.mintTotalSupply.toString()).shiftedBy(-decimals)
-  )
-  const cumulativeBorrowRate = new BigNumber(reserve.info.liquidity.cumulativeBorrowRateWads.toString()).shiftedBy(-18)
+    new BigNumber(reserve.info.collateral.mintTotalSupply.toString()).shiftedBy(
+      -decimals
+    )
+  );
+  const cumulativeBorrowRate = new BigNumber(
+    reserve.info.liquidity.cumulativeBorrowRateWads.toString()
+  ).shiftedBy(-18);
 
   return {
-    disabled: reserve.info.config.depositLimit.toString() === "0" && reserve.info.config.borrowLimit.toString() === "0",
+    disabled:
+      reserve.info.config.depositLimit.toString() === "0" &&
+      reserve.info.config.borrowLimit.toString() === "0",
     cumulativeBorrowRate,
     cTokenExchangeRate,
     reserveUtilization: totalBorrow.dividedBy(totalSupply),
     cTokenMint: reserve.info.collateral.mintPubkey.toBase58(),
     feeReceiverAddress: reserve.info.config.feeReceiver?.toBase58(),
-    reserveSupplyLimit: new BigNumber(reserve.info.config.depositLimit.toString()).shiftedBy(-decimals),
-    reserveBorrowLimit: new BigNumber(reserve.info.config.borrowLimit.toString()).shiftedBy(-decimals),
-    borrowFee: new BigNumber(reserve.info.config.fees.borrowFeeWad.toString()).shiftedBy(-18),
-    flashLoanFee: new BigNumber(reserve.info.config.fees.flashLoanFeeWad.toString()).shiftedBy(-18),
+    reserveSupplyLimit: new BigNumber(
+      reserve.info.config.depositLimit.toString()
+    ).shiftedBy(-decimals),
+    reserveBorrowLimit: new BigNumber(
+      reserve.info.config.borrowLimit.toString()
+    ).shiftedBy(-decimals),
+    borrowFee: new BigNumber(
+      reserve.info.config.fees.borrowFeeWad.toString()
+    ).shiftedBy(-18),
+    flashLoanFee: new BigNumber(
+      reserve.info.config.fees.flashLoanFeeWad.toString()
+    ).shiftedBy(-18),
     protocolLiquidationFee: reserve.info.config.protocolLiquidationFee / 100,
     hostFee: reserve.info.config.fees.hostFeePercentage / 100,
     interestRateSpread: reserve.info.config.protocolTakeRate / 100,
-    reserveSupplyCap: new BigNumber(reserve.info.config.depositLimit.toString()).shiftedBy(-decimals),
-    reserveBorrowCap: new BigNumber(reserve.info.config.borrowLimit.toString()).shiftedBy(-decimals),
+    reserveSupplyCap: new BigNumber(
+      reserve.info.config.depositLimit.toString()
+    ).shiftedBy(-decimals),
+    reserveBorrowCap: new BigNumber(
+      reserve.info.config.borrowLimit.toString()
+    ).shiftedBy(-decimals),
     targetBorrowApr: reserve.info.config.optimalBorrowRate / 100,
     targetUtilization: reserve.info.config.optimalUtilizationRate / 100,
     maxUtilizationRate: reserve.info.config.maxUtilizationRate / 100,
@@ -128,7 +163,7 @@ export function formatReserve(
       price?.emaPrice && price?.spotPrice
         ? BigNumber.max(price.emaPrice, price.spotPrice)
         : new BigNumber(price?.spotPrice ?? priceResolved),
-  }
+  };
 }
 
 export const getReservesOfPool = async (
@@ -139,24 +174,39 @@ export const getReservesOfPool = async (
   currentSlot: number,
   debug?: boolean
 ) => {
-  if (debug) console.log("getReservesOfPool")
+  if (debug) console.log("getReservesOfPool");
 
-  const filters = [{ dataSize: 619 }, { memcmp: { offset: 10, bytes: lendingMarketPubkey.toBase58() } }]
+  const filters = [
+    { dataSize: 619 },
+    { memcmp: { offset: 10, bytes: lendingMarketPubkey.toBase58() } },
+  ];
 
-  const rawReserves = await connection.getProgramAccounts(new PublicKey(programId), {
-    commitment: connection.commitment,
-    filters,
-    encoding: "base64",
-  })
+  const rawReserves = await connection.getProgramAccounts(
+    new PublicKey(programId),
+    {
+      commitment: connection.commitment,
+      filters,
+      encoding: "base64",
+    }
+  );
 
   const parsedReserves = rawReserves
-    .map((reserve, index) => (reserve ? parseReserve(rawReserves[index].pubkey, reserve.account) : null))
-    .filter(Boolean) as Array<{ info: Reserve; pubkey: PublicKey }>
+    .map((reserve, index) =>
+      reserve ? parseReserve(rawReserves[index].pubkey, reserve.account) : null
+    )
+    .filter(Boolean) as Array<{ info: Reserve; pubkey: PublicKey }>;
 
-  const prices = await fetchPrices(parsedReserves, connection, switchboardProgram, debug)
+  const prices = await fetchPrices(
+    parsedReserves,
+    connection,
+    switchboardProgram,
+    debug
+  );
 
-  return parsedReserves.map((r) => formatReserve(r, prices[r.pubkey.toBase58()], currentSlot))
-}
+  return parsedReserves.map((r) =>
+    formatReserve(r, prices[r.pubkey.toBase58()], currentSlot)
+  );
+};
 
 export const getReservesFromChain = async (
   connection: Connection,
@@ -165,21 +215,33 @@ export const getReservesFromChain = async (
   currentSlot: number,
   debug?: boolean
 ) => {
-  if (debug) console.log("getReservesFromChain")
+  if (debug) console.log("getReservesFromChain");
 
-  const filters = [{ dataSize: 619 }]
+  const filters = [{ dataSize: 619 }];
 
-  const rawReserves = await connection.getProgramAccounts(new PublicKey(programId), {
-    commitment: connection.commitment,
-    filters,
-    encoding: "base64",
-  })
+  const rawReserves = await connection.getProgramAccounts(
+    new PublicKey(programId),
+    {
+      commitment: connection.commitment,
+      filters,
+      encoding: "base64",
+    }
+  );
 
   const parsedReserves = rawReserves
-    .map((reserve, index) => (reserve ? parseReserve(rawReserves[index].pubkey, reserve.account) : null))
-    .filter(Boolean) as Array<{ info: Reserve; pubkey: PublicKey }>
+    .map((reserve, index) =>
+      reserve ? parseReserve(rawReserves[index].pubkey, reserve.account) : null
+    )
+    .filter(Boolean) as Array<{ info: Reserve; pubkey: PublicKey }>;
 
-  const prices = await fetchPrices(parsedReserves, connection, switchboardProgram, debug)
+  const prices = await fetchPrices(
+    parsedReserves,
+    connection,
+    switchboardProgram,
+    debug
+  );
 
-  return parsedReserves.map((r) => formatReserve(r, prices[r.pubkey.toBase58()], currentSlot))
-}
+  return parsedReserves.map((r) =>
+    formatReserve(r, prices[r.pubkey.toBase58()], currentSlot)
+  );
+};
