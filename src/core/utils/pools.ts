@@ -10,7 +10,7 @@ import { parseRateLimiter } from "./utils";
 export async function fetchPools(
   oldPools: Array<PoolType>,
   connection: Connection,
-  switchboardProgram: SwitchboardProgram,
+  // switchboardProgram: SwitchboardProgram,
   programId: string,
   currentSlot: number,
   debug?: boolean
@@ -18,7 +18,7 @@ export async function fetchPools(
   const reserves = (
     await getReservesFromChain(
       connection,
-      switchboardProgram,
+      // switchboardProgram,
       programId,
       currentSlot,
       debug
@@ -169,7 +169,7 @@ export function formatReserve(
 export const getReservesOfPool = async (
   lendingMarketPubkey: PublicKey,
   connection: Connection,
-  switchboardProgram: SwitchboardProgram,
+  // switchboardProgram: SwitchboardProgram,
   programId: string,
   currentSlot: number,
   debug?: boolean
@@ -199,7 +199,7 @@ export const getReservesOfPool = async (
   const prices = await fetchPrices(
     parsedReserves,
     connection,
-    switchboardProgram,
+    // switchboardProgram,
     debug
   );
 
@@ -210,7 +210,7 @@ export const getReservesOfPool = async (
 
 export const getReservesFromChain = async (
   connection: Connection,
-  switchboardProgram: SwitchboardProgram,
+  // switchboardProgram: SwitchboardProgram,
   programId: string,
   currentSlot: number,
   debug?: boolean
@@ -237,7 +237,7 @@ export const getReservesFromChain = async (
   const prices = await fetchPrices(
     parsedReserves,
     connection,
-    switchboardProgram,
+    // switchboardProgram,
     debug
   );
 
